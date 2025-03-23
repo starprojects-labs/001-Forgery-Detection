@@ -120,7 +120,7 @@ def vgg_prediction(image):
     return p_model
 
 
-@app.route('/upload', methods=['POST'])
+@app.route('/uploadfile', methods=['POST'])
 def upload_data():
     """ Step 1-8: Handle image upload, process it, and return the final result """
 
