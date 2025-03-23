@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage.feature import CENSURE, BRIEF
 from sklearn.cluster import DBSCAN
-from tensorflow.keras.models import load_model
+from keras.models import load_model
 
 # Initialize Flask App
 app = Flask(__name__)
@@ -15,7 +15,7 @@ CORS(app)
 # ml model -> https://drive.google.com/file/d/1X5o0cqvjTHoWLqfDyw-_E7Z5wpXqyCoS/view?usp=drive_link
 
 # Load Pretrained VGG16 Model
-model = load_model("sucessForgery.keras")
+model = load_model("./models/sucessForgery.keras")
 print("Model loaded successfully!")
 
 # Ensure temporary directory exists for image storage
