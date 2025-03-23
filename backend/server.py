@@ -1,58 +1,170 @@
-import io
+from flask import Flask, request, jsonify
+import os
+from flask_cors import CORS
 import cv2
 import numpy as np
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-from PIL import Image
+import matplotlib.pyplot as plt
+from skimage.feature import CENSURE, BRIEF
+from sklearn.cluster import DBSCAN
 from tensorflow.keras.models import load_model
 
-app = Flask(__name__)
+# Initialize Flask App
+app = Flask(_name_)
 CORS(app)
 
 # ml model -> https://drive.google.com/file/d/1X5o0cqvjTHoWLqfDyw-_E7Z5wpXqyCoS/view?usp=drive_link
-model = load_model("sucessForgery.keras")
 
+# Load Pretrained VGG16 Model
+model = load_model("sucessForgery.keras")
 print("Model loaded successfully!")
 
-@app.route('/', methods=['GET'])
-def home():
-    return jsonify("Hello darling")
+# Ensure temporary directory exists for image storage
+TEMP_DIR = "./tmp"
+os.makedirs(TEMP_DIR, exist_ok=True)
 
-@app.route('/uploadfile', methods=['POST'])
+def keypoint_detection(image):
+    """ Step 1-5: Process the image using Keypoint Detection and return match ratio """
+
+    # Convert image to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Step 1: Keypoint Detection using CenSurE
+    detector = CENSURE()
+    detector.detect(gray)
+    keypoints = [cv2.KeyPoint(float(kp[1]), float(kp[0]), 1) for kp in detector.keypoints]
+
+    # Step 2: Descriptor Extraction using BRIEF
+    brief = BRIEF()
+    brief.extract(gray, detector.keypoints)
+
+    if brief.descriptors is not None:
+        valid_keypoints = []
+        valid_descriptors = []
+        for i in range(len(brief.descriptors)):
+            valid_keypoints.append(keypoints[i])
+            valid_descriptors.append(brief.descriptors[i])
+        keypoints = valid_keypoints
+        descriptors = np.array(valid_descriptors)
+    else:
+        return 0  # No keypoints found, match ratio is 0
+
+    # Step 3: Cluster Keypoints using DBSCAN
+    keypoint_coords = np.array([kp.pt for kp in keypoints])
+    dbscan = DBSCAN(eps=20, min_samples=5)
+    clusters = dbscan.fit_predict(keypoint_coords)
+
+    clustered_keypoints = {}
+    clustered_descriptors = {}
+    for idx, cluster_id in enumerate(clusters):
+        if cluster_id == -1:
+            continue
+        if cluster_id not in clustered_keypoints:
+            clustered_keypoints[cluster_id] = []
+            clustered_descriptors[cluster_id] = []
+        clustered_keypoints[cluster_id].append(keypoints[idx])
+        clustered_descriptors[cluster_id].append(descriptors[idx])
+
+    # Step 4: Match Keypoints Between Different Clusters
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches_between_clusters = []
+
+    cluster_ids = list(clustered_keypoints.keys())
+    for i in range(len(cluster_ids)):
+        for j in range(i + 1, len(cluster_ids)):
+            cluster1 = cluster_ids[i]
+            cluster2 = cluster_ids[j]
+            desc1 = np.array(clustered_descriptors[cluster1], dtype=np.uint8)
+            desc2 = np.array(clustered_descriptors[cluster2], dtype=np.uint8)
+            if len(desc1) < 2 or len(desc2) < 2:
+                continue
+            matches = bf.match(desc1, desc2)
+            matches = sorted(matches, key=lambda x: x.distance)
+            matches_between_clusters.extend([(cluster1, cluster2, match) for match in matches])
+
+    print(f"Total Matches Before RANSAC: {len(matches_between_clusters)}")
+
+    # Step 5: Use Fundamental Matrix (FM) RANSAC to Filter Matches
+    pts1, pts2 = [], []
+    for cluster1, cluster2, match in matches_between_clusters:
+        pts1.append(clustered_keypoints[cluster1][match.queryIdx].pt)
+        pts2.append(clustered_keypoints[cluster2][match.trainIdx].pt)
+
+    pts1 = np.float32(pts1).reshape(-1, 1, 2)
+    pts2 = np.float32(pts2).reshape(-1, 1, 2)
+
+    if len(pts1) >= 4:
+        F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_RANSAC, 1.0, 0.99)
+        matchesMask = mask.ravel().tolist()
+        total_matches_after_ransac = sum(matchesMask)
+        match_ratio = total_matches_after_ransac / len(matchesMask) if len(matchesMask) > 0 else 0
+    else:
+        match_ratio = 0
+
+    print(f"Match Ratio (After RANSAC): {match_ratio:.2f}")
+    return match_ratio
+
+
+def vgg_prediction(image):
+    """ Step 6: Process the image using VGG16 model and return the prediction """
+    image = cv2.resize(image, (224, 224))
+    image = image / 255.0  # Normalize pixel values
+    image = np.expand_dims(image, axis=0)
+
+    prediction = model.predict(image)
+    predicted_class = 1 if prediction[0][0] > 0.5 else 0
+
+    print(f"VGG Model Prediction: {'Tampered' if predicted_class == 1 else 'Authentic'}")
+
+    # Convert prediction to probability
+    p_model = 0.9 if predicted_class == 1 else 0.1
+    return p_model
+
+
+@app.route('/upload', methods=['POST'])
 def upload_data():
+    """ Step 1-8: Handle image upload, process it, and return the final result """
+
     if 'file' not in request.files:
-        return jsonify({"error": "No file part"})
+        return jsonify({"error": "No file part"}), 400
 
     file = request.files['file']
     if file.filename == '':
-        return jsonify({"error": "No selected file"})
+        return jsonify({"error": "No selected file"}), 400
 
     try:
-        image = Image.open(io.BytesIO(file.read()))
-        image = image.convert('RGB')
-        img = cv2.imread(image)
-        if img is not None:
-            img = cv2.resize(img, (224, 224))
-            img = img / 255.0
-            img = np.expand_dims(img, axis=0)
-            print("Image preprocessed successfully!")
-            modelRunner(img)
-            result = True
-            return jsonify({"result": result}), 200
-        else:
-            return jsonify({"error": "Failed to process image"}), 400
+        # Save and Load Image
+        filepath = os.path.join(TEMP_DIR, file.filename)
+        file.save(filepath)
+        image = cv2.imread(filepath)
+
+        if image is None:
+            return jsonify({"error": "Image could not be loaded"}), 500
+
+        # Step 3: Keypoint Detection Method
+        match_ratio = keypoint_detection(image)
+
+        # Step 6: VGG16 Model Prediction
+        p_model = vgg_prediction(image)
+
+        # Step 7: Compute Fusion Result
+        fusion_result = 0.1 * match_ratio + 0.9 * p_model
+
+        # Step 8: Display Final Output
+        predicted_class = 1 if fusion_result > 0.5 else 0
+        result_text = "Tampered Image ❌" if predicted_class == 1 else "Authentic Image ✅"
+
+        print(f"Fusion Result: {fusion_result:.2f} - {result_text}")
+
+        return jsonify({
+            "match_ratio": round(match_ratio, 2),
+            "vgg_prediction": round(p_model, 2),
+            "fusion_result": round(fusion_result, 2),
+            "final_prediction": result_text
+        })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def modelRunner(img):
-    predictions = model.predict(img)
-    print(predictions)
-    predicted_class = 1 if predictions[0][0] > 0.5 else 0
-
-    if predicted_class == 0:
-        print("Prediction: Authentic Image ✅")
-    else:
-        print("Prediction: Tampered Image ❌")
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
