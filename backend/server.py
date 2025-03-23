@@ -9,7 +9,7 @@ from sklearn.cluster import DBSCAN
 from tensorflow.keras.models import load_model
 
 # Initialize Flask App
-app = Flask(_name_)
+app = Flask(__name__)
 CORS(app)
 
 # ml model -> https://drive.google.com/file/d/1X5o0cqvjTHoWLqfDyw-_E7Z5wpXqyCoS/view?usp=drive_link
