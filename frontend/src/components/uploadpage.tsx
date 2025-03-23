@@ -1,19 +1,22 @@
 "use client"
 
-import { useState, useCallback, Suspense } from "react"
-import { Canvas } from "@react-three/fiber"
-import { Environment, Float, OrbitControls } from "@react-three/drei"
-import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Upload, CheckCircle2, Loader2 } from "lucide-react"
+import { Environment, Float, OrbitControls } from "@react-three/drei"
+import { Canvas } from "@react-three/fiber"
+import { motion } from "framer-motion"
+import { CheckCircle2, Loader2, Upload } from "lucide-react"
+import { Suspense, useCallback, useState } from "react"
 import { useDropzone } from "react-dropzone"
+import ResultAnimation from "./response"
+import YesNoIndicator from "./response"
 
 export default function UploadPage() {
     const [file, setFile] = useState<File | null>(null)
     const [uploading, setUploading] = useState(false)
     const [uploadComplete, setUploadComplete] = useState(false)
+    const [response, setResponse] = useState<boolean>(false)
 
-    const api = 'http://localhost:8000'
+    const api = 'http://127.0.0.1:5000'
 
     const onDrop = useCallback((acceptedFiles: File[]) => {
         if (acceptedFiles.length > 0) {
@@ -26,6 +29,9 @@ export default function UploadPage() {
         onDrop,
         maxFiles: 1,
         multiple: false,
+        accept: {
+            'image/*': []
+        },
     })
 
     const handleUpload = async () => {
@@ -33,16 +39,21 @@ export default function UploadPage() {
 
         setUploading(true)
 
+        const formData = new FormData();
+        formData.append('file', file);
+
         // Simulate upload - replace with actual upload logic
         await new Promise((resolve) => setTimeout(resolve, 2000))
 
-        const uploadfile = await fetch(api+'/uploadfile',{
+        const uploadfile = await fetch(api + '/uploadfile', {
             method: 'POST',
-            headers: { 'Content-Type': file.type },
-            body: file,
+            body: formData,
         })
 
-        console.log('File uploaded:', uploadfile)
+        const result = await uploadfile.json()
+        console.log('File uploaded:', result.result)
+
+        setResponse(result.result)
 
         setUploading(false)
         setUploadComplete(true)
@@ -74,109 +85,118 @@ export default function UploadPage() {
             </div>
 
             {/* Content */}
-            <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-8">
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8 }}
-                    className="text-center mb-12"
-                >
-                    <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-lg">Welcome to Forgery Detection</h1>
-                    <p className="text-xl text-purple-200 max-w-2xl mx-auto">Drop your files below to get started</p>
-                </motion.div>
+            {response ?
+                <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-8">
+                    <YesNoIndicator value={response} />
+                </main>
+                : <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-8">
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8 }}
+                        className="text-center mb-12"
+                    >
+                        <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 drop-shadow-lg">Welcome to Forgery Detection</h1>
+                        <p className="text-xl text-purple-200 max-w-2xl mx-auto">Drop your files below to get started</p>
+                    </motion.div>
 
-                <motion.div
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.3, duration: 0.5 }}
-                    className="w-full max-w-md"
-                >
-                    <div
-                        {...getRootProps()}
-                        className={`
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ delay: 0.3, duration: 0.5 }}
+                        className="w-full max-w-md"
+                    >
+                        <div
+                            {...getRootProps()}
+                            className={`
               p-8 rounded-xl backdrop-blur-md bg-white/10 border-2 
               ${isDragActive ? "border-purple-400 bg-white/20" : "border-purple-300/50"} 
               transition-all duration-300 cursor-pointer hover:bg-white/20
               flex flex-col items-center justify-center text-center
               h-64
             `}
-                    >
-                        <input {...getInputProps()} />
-
-                        {file ? (
-                            <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-white">
-                                <p className="font-medium text-lg mb-2">File selected:</p>
-                                <p className="text-purple-200 break-all">{file.name}</p>
-                                <p className="text-purple-300 text-sm mt-2">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                animate={{
-                                    y: isDragActive ? -10 : 0,
-                                }}
-                                className="text-white"
-                            >
-                                <Upload className="h-12 w-12 mb-4 mx-auto text-purple-200" />
-                                <p className="font-medium text-lg">{isDragActive ? "Drop the file here" : "Drag & drop a file here"}</p>
-                                <p className="text-purple-200 text-sm mt-2">or click to select</p>
-                            </motion.div>
-                        )}
-                    </div>
-
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.5 }}
-                        className="mt-6 flex justify-center"
-                    >
-                        <Button
-                            onClick={handleUpload}
-                            disabled={!file || uploading || uploadComplete}
-                            className="relative overflow-hidden group bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white px-8 py-6 rounded-xl text-lg font-medium shadow-lg"
                         >
-                            <motion.span
-                                animate={{
-                                    x: uploading ? 100 : 0,
-                                    opacity: uploading ? 0 : 1,
-                                }}
-                                className="flex items-center gap-2"
-                            >
-                                {uploadComplete ? (
-                                    <>
-                                        <CheckCircle2 className="h-5 w-5" />
-                                        <span>Uploaded!</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Upload className="h-5 w-5" />
-                                        <span>Upload File</span>
-                                    </>
-                                )}
-                            </motion.span>
+                            <input {...getInputProps()} />
 
-                            {uploading && (
-                                <motion.span
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="absolute inset-0 flex items-center justify-center"
+                            {file ? (
+                                <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-white">
+                                    <p className="font-medium text-lg mb-2">File selected:</p>
+                                    <p className="text-purple-200 break-all">{file.name}</p>
+                                    <p className="text-purple-300 text-sm mt-2">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                    {/* <img
+                                    src={URL.createObjectURL(file)}
+                                    alt="Selected file preview"
+                                    className="mt-4 max-h-48 rounded-lg shadow-lg"
+                                /> */}
+                                </motion.div>
+                            ) : (
+                                <motion.div
+                                    animate={{
+                                        y: isDragActive ? -10 : 0,
+                                    }}
+                                    className="text-white"
                                 >
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                    <span className="ml-2">Uploading...</span>
-                                </motion.span>
+                                    <Upload className="h-12 w-12 mb-4 mx-auto text-purple-200" />
+                                    <p className="font-medium text-lg">{isDragActive ? "Drop the file here" : "Drag & drop a file here"}</p>
+                                    <p className="text-purple-200 text-sm mt-2">or click to select</p>
+                                </motion.div>
                             )}
+                        </div>
 
-                            <motion.div
-                                className="absolute bottom-0 left-0 h-1 bg-white/30"
-                                initial={{ width: 0 }}
-                                animate={{
-                                    width: uploading ? "100%" : 0,
-                                }}
-                                transition={{ duration: 2, ease: "linear" }}
-                            />
-                        </Button>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 0.5 }}
+                            className="mt-6 flex justify-center"
+                        >
+                            <Button
+                                onClick={handleUpload}
+                                disabled={!file || uploading || uploadComplete}
+                                className="relative overflow-hidden group bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white px-8 py-6 rounded-xl text-lg font-medium shadow-lg"
+                            >
+                                <motion.span
+                                    animate={{
+                                        x: uploading ? 100 : 0,
+                                        opacity: uploading ? 0 : 1,
+                                    }}
+                                    className="flex items-center gap-2"
+                                >
+                                    {uploadComplete ? (
+                                        <>
+                                            <CheckCircle2 className="h-5 w-5" />
+                                            <span>Analyized!</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload className="h-5 w-5" />
+                                            <span>Analyize</span>
+                                        </>
+                                    )}
+                                </motion.span>
+
+                                {uploading && (
+                                    <motion.span
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        className="absolute inset-0 flex items-center justify-center"
+                                    >
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                        <span className="ml-2">Analyizing...</span>
+                                    </motion.span>
+                                )}
+
+                                <motion.div
+                                    className="absolute bottom-0 left-0 h-1 bg-white/30"
+                                    initial={{ width: 0 }}
+                                    animate={{
+                                        width: uploading ? "100%" : 0,
+                                    }}
+                                    transition={{ duration: 2, ease: "linear" }}
+                                />
+                            </Button>
+                        </motion.div>
                     </motion.div>
-                </motion.div>
-            </main>
+                </main>}
         </div>
     )
 }

@@ -16,6 +16,8 @@ dist/
 build/
 *.pyc
 
+models
+
 # Flask specific
 instance/
 *.db
