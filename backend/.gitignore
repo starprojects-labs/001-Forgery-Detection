@@ -16,7 +16,9 @@ dist/
 build/
 *.pyc
 
-models
+models/*
+myenv
+
 
 # Flask specific
 instance/

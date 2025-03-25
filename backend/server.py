@@ -15,7 +15,7 @@ CORS(app)
 # ml model -> https://drive.google.com/file/d/1X5o0cqvjTHoWLqfDyw-_E7Z5wpXqyCoS/view?usp=drive_link
 
 # Load Pretrained VGG16 Model
-model = load_model("./models/sucessForgery.keras")
+model = load_model("D:/AI/Karthik/001-Forgery-Detection/backend/models/sucessForgery.keras")
 print("Model loaded successfully!")
 
 # Ensure temporary directory exists for image storage
@@ -120,25 +120,25 @@ def vgg_prediction(image):
     return p_model
 
 
+
 @app.route('/uploadfile', methods=['POST'])
 def upload_data():
-    """ Step 1-8: Handle image upload, process it, and return the final result """
+    """ Handle image upload, process it in memory, and return the result """
 
     if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
+        return jsonify({"error": "No file provided"}), 400
 
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
     try:
-        # Save and Load Image
-        filepath = os.path.join(TEMP_DIR, file.filename)
-        file.save(filepath)
-        image = cv2.imread(filepath)
+        # Convert file to OpenCV image (without saving)
+        file_bytes = np.frombuffer(file.read(), np.uint8)
+        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
         if image is None:
-            return jsonify({"error": "Image could not be loaded"}), 500
+            return jsonify({"error": "Invalid image format"}), 400
 
         # Step 3: Keypoint Detection Method
         match_ratio = keypoint_detection(image)
@@ -146,21 +146,22 @@ def upload_data():
         # Step 6: VGG16 Model Prediction
         p_model = vgg_prediction(image)
 
+        key_point = "Tampered Image ❌" if match_ratio > 0.7 else "Authentic Image ✅"
+        model_result  = "Tampered Image ❌" if p_model > 0.5 else "Authentic Image ✅"
+
         # Step 7: Compute Fusion Result
         fusion_result = 0.1 * match_ratio + 0.9 * p_model
 
-        # Step 8: Display Final Output
-        predicted_class = 1 if fusion_result > 0.5 else 0
-        result_text = "Tampered Image ❌" if predicted_class == 1 else "Authentic Image ✅"
-
-        print(f"Fusion Result: {fusion_result:.2f} - {result_text}")
+        # Step 8: Final Classification
+        result_text = "Tampered Image ❌" if fusion_result > 0.5 else "Authentic Image ✅"
+        print(result_text,'result')
 
         return jsonify({
-            "match_ratio": round(match_ratio, 2),
-            "vgg_prediction": round(p_model, 2),
+            "match_ratio": key_point,
+            "vgg_prediction": model_result,
             "fusion_result": round(fusion_result, 2),
             "final_prediction": result_text
-        })
+        }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

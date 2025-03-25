@@ -1,4 +1,11 @@
 flask
-numpy
 flask_cors
+numpy
 tensorflow
+opencv-python  
+Pillow
+scikit-learn
+pandas
+requests
+matplotlib
+scikit-image
