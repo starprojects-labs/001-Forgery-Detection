@@ -26,10 +26,16 @@ export default function UploadPage() {
     fusion_result: number;
   } | null>(null);
 
-  const [processedImage, setProcessedImage] = useState<{ image: string | null; match_ratio: number | null }>({
+  const [processedImage, setProcessedImage] = useState<{ 
+    image: string | null; 
+    match_ratio: number | null; 
+    forgery_image: string | null; 
+}>({
     image: null,
     match_ratio: null,
-  });
+    forgery_image: null,
+});
+
   const [vggResult, setVggResult] = useState<{
     vgg_prediction: string;
     vgg_result: number;
@@ -93,48 +99,50 @@ export default function UploadPage() {
 
   const handleKeypoint = async () => {
     if (!file) return;
-  
+
     setUploading((s) => ({ ...s, loader2: true }));
-    setProcessedImage({ image: null, match_ratio: null });
+    setProcessedImage({ image: null, match_ratio: null, forgery_image: null });
     setErrorMessage(null);
-  
+
     const formData = new FormData();
     formData.append("file", file);
     handleClear();
     setFile(file);
-  
+
     try {
-      const response = await fetch(api + "/keypoint", {
-        method: "POST",
-        body: formData,
-      });
-  
-      const data = await response.json();
-  
-      if (!response.ok || data.error) {
-        setErrorMessage(data.error || "Failed to process image. Please try again.");
-        return;
-      }
-  
-      if (data.processed_image) {
-        setProcessedImage({
-          image: `data:image/jpeg;base64,${data.processed_image}`,
-          match_ratio: data.match_ratio ?? null, // Ensures match_ratio is always set
+        const response = await fetch(api + "/keypoint", {
+            method: "POST",
+            body: formData,
         });
-      } else {
-        alert("No keypoints detected or processing error.");
-      }
-  
-      console.log("Keypoint analysis:", data);
-  
+
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+            setErrorMessage(data.error || "Failed to process image. Please try again.");
+            return;
+        }
+
+        if (data.processed_image || data.forgery_image) {
+            setProcessedImage({
+                image: data.processed_image ? `data:image/jpeg;base64,${data.processed_image}` : null,
+                match_ratio: data.match_ratio ?? null,
+                forgery_image: data.forgery_image ? `data:image/jpeg;base64,${data.forgery_image}` : null,
+            });
+        } else {
+            alert("No keypoints detected or processing error.");
+        }
+
+        console.log("Keypoint analysis:", data);
+
     } catch (error) {
-      console.error("Analysis failed:", error);
-      setErrorMessage("An error occurred while processing the image. Please try again.");
+        console.error("Analysis failed:", error);
+        setErrorMessage("An error occurred while processing the image. Please try again.");
     } finally {
-      setUploading((s) => ({ ...s, loader2: false }));
-      setUploadComplete(true);
+        setUploading((s) => ({ ...s, loader2: false }));
+        setUploadComplete(true);
     }
-  };
+};
+
 
   const vgganalyze = async () => {
     if (!file) return;
@@ -338,13 +346,40 @@ export default function UploadPage() {
               </div>
             </motion.div>
           )}
-          {processedImage?.image && (
+         
+
+         {(processedImage?.image || processedImage?.forgery_image) && (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     className="mt-8 p-6 rounded-xl backdrop-blur-md bg-white/10 border-2 border-purple-300/50 text-center"
   >
-    <img src={processedImage.image} alt="Processed" className="rounded-lg shadow-lg mx-auto" />
+    {/* Image Container (Flex, Side by Side) */}
+    <div className="flex justify-center gap-6">
+      {processedImage.image && (
+        <div className="flex flex-col items-center">
+          <p className="text-sm font-semibold text-white mb-2">Processed Image</p>
+          <img 
+            src={processedImage.image} 
+            alt="Processed" 
+            className="rounded-lg shadow-lg w-40 h-40 object-contain"
+          />
+        </div>
+      )}
+
+      {processedImage.forgery_image && (
+        <div className="flex flex-col items-center">
+          <p className="text-sm font-semibold text-red-400 mb-2">Forgery Image</p>
+          <img 
+            src={processedImage.forgery_image} 
+            alt="Forgery" 
+            className="rounded-lg shadow-lg w-40 h-40 object-contain"
+          />
+        </div>
+      )}
+    </div>
+
+    {/* Match Ratio Below Images */}
     {processedImage.match_ratio !== null && (
       <p className="mt-4 text-lg font-semibold text-white">
         Match Ratio: {processedImage.match_ratio.toFixed(2)}
@@ -352,6 +387,8 @@ export default function UploadPage() {
     )}
   </motion.div>
 )}
+
+
 
 
           {errorMessage && <p className="text-red-400 text-sm mt-4 text-center">{errorMessage}</p>}
