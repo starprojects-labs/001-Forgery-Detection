@@ -12,7 +12,7 @@ app = Flask(__name__)
 CORS(app)  # Allow CORS for all origins (for development)
 
 # Load Pretrained VGG16 Model
-model = load_model("D:/AI/Karthik/001-Forgery-Detection-1/backend/models/sucessForgery.keras")
+model = load_model("D:/AI/Final Year ML Projects/Forgery-Detection-in-images/backend/models/sucessForgery.keras")
 print("Model loaded successfully!")
 
 # Ensure temporary directory exists for image storage
@@ -20,31 +20,25 @@ TEMP_DIR = "./tmp"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 def keypoint_image_detection(image):
-    """ Detect keypoints, cluster them, compute match ratio, and return an image with matches drawn. """
+    """Robust keypoint detection and cluster-based matching for all image types."""
+
     try:
-        print("Processing image...")  
+        print("Processing image...")
+
         img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        detector = CENSURE()
-        detector.detect(img_gray)
-        
-        if len(detector.keypoints) == 0:
-            print("No keypoints found.")
-            return None, None  
+        # Use ORB for keypoint detection and description (handles blur, rotation, scale)
+        orb = cv2.ORB_create(nfeatures=1000)
+        keypoints, descriptors = orb.detectAndCompute(img_gray, None)
 
-        keypoints = [cv2.KeyPoint(float(kp[1]), float(kp[0]), 1) for kp in detector.keypoints]
+        if not keypoints or descriptors is None or len(keypoints) < 5:
+            print("No sufficient keypoints found.")
+            return None, None
 
-        brief = BRIEF()
-        brief.extract(img_gray, detector.keypoints)
-
-        if brief.descriptors is None:
-            print("No descriptors extracted.")
-            return None, None  
-
-        descriptors = np.array(brief.descriptors)
-
+        # Get keypoint coordinates
         keypoint_coords = np.array([kp.pt for kp in keypoints])
 
+        # Cluster keypoints using DBSCAN
         dbscan = DBSCAN(eps=20, min_samples=5)
         clusters = dbscan.fit_predict(keypoint_coords)
 
@@ -52,7 +46,7 @@ def keypoint_image_detection(image):
         clustered_descriptors = {}
 
         for idx, cluster_id in enumerate(clusters):
-            if cluster_id == -1:
+            if cluster_id == -1:  # Noise
                 continue
             if cluster_id not in clustered_keypoints:
                 clustered_keypoints[cluster_id] = []
@@ -60,6 +54,7 @@ def keypoint_image_detection(image):
             clustered_keypoints[cluster_id].append(keypoints[idx])
             clustered_descriptors[cluster_id].append(descriptors[idx])
 
+        # Matcher setup
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches_between_clusters = []
 
@@ -67,26 +62,26 @@ def keypoint_image_detection(image):
         for i in range(len(cluster_ids)):
             for j in range(i + 1, len(cluster_ids)):
                 cluster1, cluster2 = cluster_ids[i], cluster_ids[j]
-
                 desc1 = np.array(clustered_descriptors[cluster1], dtype=np.uint8)
                 desc2 = np.array(clustered_descriptors[cluster2], dtype=np.uint8)
 
-                if len(desc1) < 2 or len(desc2) < 2:
+                if desc1.shape[0] < 2 or desc2.shape[0] < 2:
                     continue
 
                 matches = bf.match(desc1, desc2)
                 matches = sorted(matches, key=lambda x: x.distance)
                 matches_between_clusters.extend([(cluster1, cluster2, match) for match in matches])
 
-        match_ratio = len(matches_between_clusters) / len(keypoints) if len(keypoints) > 0 else 0
+        match_ratio = len(matches_between_clusters) / len(keypoints) if keypoints else 0
 
+        # Draw matches
         img_matches = image.copy()
         for cluster1, cluster2, match in matches_between_clusters:
             pt1 = tuple(map(int, clustered_keypoints[cluster1][match.queryIdx].pt))
             pt2 = tuple(map(int, clustered_keypoints[cluster2][match.trainIdx].pt))
             cv2.line(img_matches, pt1, pt2, (0, 255, 0), 2)
 
-        cv2.putText(img_matches, f"Match Ratio: {match_ratio:.2f}", (20, 50), 
+        cv2.putText(img_matches, f"Match Ratio: {match_ratio:.2f}", (20, 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
         return img_matches, match_ratio
@@ -94,7 +89,6 @@ def keypoint_image_detection(image):
     except Exception as e:
         print(f"Error in keypoint detection: {e}")
         return None, None
-
 
 def forgery_detection(image):
     """ Detect keypoints, apply FM-RANSAC filtering, and return a processed image with a forgery mask. """

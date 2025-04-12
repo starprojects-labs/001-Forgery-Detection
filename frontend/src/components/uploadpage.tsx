@@ -129,7 +129,7 @@ export default function UploadPage() {
                 forgery_image: data.forgery_image ? `data:image/jpeg;base64,${data.forgery_image}` : null,
             });
         } else {
-            alert("No keypoints detected or processing error.");
+            alert("Image you uploaded is very blurry. No key points are detected");
         }
 
         console.log("Keypoint analysis:", data);
